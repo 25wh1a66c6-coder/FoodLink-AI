@@ -7,10 +7,8 @@ import { defineConfig } from 'vite';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-export default defineConfig(({ mode }) => {
-  const isProd = mode === 'production' || process.env.NODE_ENV === 'production' || Boolean(process.env.GITHUB_ACTIONS);
-  return {
-    base: isProd ? '/FoodLink-AI/' : '/',
+export default defineConfig({
+  base: '/FoodLink-AI/',
     plugins: [react(), tailwindcss()],
     resolve: {
       alias: {
@@ -23,6 +21,5 @@ export default defineConfig(({ mode }) => {
       hmr: process.env.DISABLE_HMR !== 'true',
       // Disable file watching when DISABLE_HMR is true to save CPU during agent edits.
       watch: process.env.DISABLE_HMR === 'true' ? null : {},
-    },
-  };
+  },
 });

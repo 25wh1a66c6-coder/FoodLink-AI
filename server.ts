@@ -1415,6 +1415,7 @@ async function startServer() {
       server: { middlewareMode: true },
       appType: "spa",
     });
+    app.get("/", (req, res) => res.redirect("/FoodLink-AI/"));
     app.use(vite.middlewares);
   } else {
     const distPath = path.join(process.cwd(), "dist");
