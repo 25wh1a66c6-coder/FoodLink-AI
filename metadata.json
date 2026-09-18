@@ -1,0 +1,6 @@
+{
+  "name": "FoodLink AI",
+  "description": "AI-Assisted Food-Waste Redistribution Platform coordinating surplus food donors, NGOs/charities, and delivery personnel to reduce avoidable food wastage.",
+  "requestFramePermissions": ["geolocation"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
