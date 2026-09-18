@@ -1,4 +1,4 @@
-name: Deploy FoodLink AI to GitHub Pages
+name: Deploy FoodLink AI
 
 on:
   push:
