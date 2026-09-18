@@ -40,6 +40,7 @@ import { DeliveryTrackingView } from "./components/delivery/DeliveryTrackingView
 import { AdminDashboard } from "./components/admin/AdminDashboard";
 import { FoodWasteLogView } from "./components/admin/FoodWasteLogView";
 import { UserManagementView } from "./components/admin/UserManagementView";
+import { apiClient } from "./services/apiClient";
 
 export function App() {
   // Navigation & Role State
@@ -85,24 +86,14 @@ export function App() {
   // Fetch initial data
   const fetchData = useCallback(async () => {
     try {
-      const [donationsRes, statsRes, reqRes, delRes, wasteRes, notifRes, usersRes] =
-        await Promise.all([
-          fetch("/api/donations").then((r) => r.json()),
-          fetch("/api/stats").then((r) => r.json()),
-          fetch("/api/requirements").then((r) => r.json()),
-          fetch("/api/deliveries").then((r) => r.json()),
-          fetch("/api/waste-logs").then((r) => r.json()),
-          fetch("/api/notifications").then((r) => r.json()),
-          fetch("/api/users").then((r) => r.json()),
-        ]);
-
-      setDonations(Array.isArray(donationsRes) ? donationsRes : donationsRes.donations || []);
-      setStats(statsRes.statistics || statsRes.stats || statsRes);
-      setRequirements(Array.isArray(reqRes) ? reqRes : reqRes.requirements || []);
-      setDeliveries(Array.isArray(delRes) ? delRes : delRes.deliveries || []);
-      setWasteLogs(Array.isArray(wasteRes) ? wasteRes : wasteRes.waste_logs || wasteRes.wasteLogs || []);
-      setNotifications(Array.isArray(notifRes) ? notifRes : notifRes.notifications || []);
-      setUsers(Array.isArray(usersRes) ? usersRes : usersRes.users || []);
+      const data = await apiClient.fetchInitialData();
+      setDonations(data.donations || []);
+      setStats(data.stats);
+      setRequirements(data.requirements || []);
+      setDeliveries(data.deliveries || []);
+      setWasteLogs(data.wasteLogs || []);
+      setNotifications(data.notifications || []);
+      setUsers(data.users || []);
     } catch (err) {
       console.error("Failed to fetch initial data:", err);
     }
@@ -128,24 +119,7 @@ export function App() {
   const handleCreateDonation = async (donationData: any) => {
     setIsActionLoading(true);
     try {
-      const res = await fetch("/api/donations", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          ...donationData,
-          donor_id: "usr_donor_1",
-          donor_name: "FreshBite Restaurant",
-          latitude: 17.4325,
-          longitude: 78.4072,
-        }),
-      });
-
-      if (!res.ok) {
-        const errJson = await res.json().catch(() => ({}));
-        throw new Error(errJson.error || "Failed to create donation");
-      }
-      const data = await res.json();
-      const created = data.donation || data;
+      const created = await apiClient.createDonation(donationData);
 
       // Show SMS simulation toast with defined properties
       const foodName =
@@ -176,25 +150,7 @@ export function App() {
   const handleAcceptMatch = async (match: AiMatch, donation: Donation) => {
     setAcceptingDonationId(donation.donation_id);
     try {
-      const res = await fetch(`/api/matches/${match.match_id}/accept`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          ngo_id: "usr_ngo_1",
-          ngo_name: "Hope Community Center",
-          donation_id: donation.donation_id,
-          destination: "Shaikpet, Hyderabad",
-          contact_phone: "+91 98201 54321",
-          delivery_person_id: "usr_delivery_1",
-          delivery_person_name: "Rajesh Kumar",
-        }),
-      });
-
-      if (!res.ok) {
-        const errJson = await res.json().catch(() => ({}));
-        throw new Error(errJson.error || "Failed to accept match");
-      }
-      const result = await res.json();
+      const result = await apiClient.acceptMatch(match, donation);
       const del = result.delivery || {};
 
       // Show SMS alert toast to simulate Section 14 notification
@@ -226,14 +182,7 @@ export function App() {
   ) => {
     setIsActionLoading(true);
     try {
-      const res = await fetch(`/api/deliveries/${deliveryId}/status`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ status, failure_reason: reason }),
-      });
-
-      if (!res.ok) throw new Error("Failed to update status");
-      const updated = await res.json();
+      const updated = await apiClient.updateDeliveryStatus(deliveryId, status, reason);
 
       // Check for delivery completion -> show Section 19 success celebration!
       if (status === "DELIVERED_SUCCESSFULLY") {
@@ -253,11 +202,7 @@ export function App() {
   const handleUpdateRequirements = async (reqData: any) => {
     try {
       const target = requirements[0] || { requirement_id: "req_1" };
-      await fetch(`/api/requirements/${target.requirement_id}`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(reqData),
-      });
+      await apiClient.updateRequirements(target.requirement_id, reqData);
       await fetchData();
     } catch (e) {
       console.error(e);
@@ -267,9 +212,8 @@ export function App() {
   // Admin: Expiry Sweep
   const handleTriggerSweep = async () => {
     try {
-      const res = await fetch("/api/maintenance/sweep-expired", { method: "POST" });
-      const data = await res.json();
-      alert(`Safety audit complete: ${data.message}`);
+      const res = await apiClient.triggerSafetySweep();
+      alert(`Safety audit complete: ${res.message || "Audited successfully"}`);
       await fetchData();
     } catch (e) {
       console.error(e);
@@ -281,66 +225,55 @@ export function App() {
     setIsActionLoading(true);
     try {
       // 1. Create FreshBite donation (12 units, 2 hours expiry)
-      const donationRes = await fetch("/api/donations", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          donor_id: "user_donor_1",
-          donor_name: "FreshBite Restaurant",
-          food_name: "Vegetarian Meal Pack",
-          food_type: "Cooked Meal",
-          food_category: "Veg Meal",
-          quantity: 12,
-          packets: 12,
-          servings: 12,
-          prep_time: "Freshly prepared 30 mins ago",
-          expiry_time: new Date(Date.now() + 2 * 60 * 60 * 1000).toISOString(),
-          dietary_information: ["Vegetarian", "Jain-friendly"],
-          allergens: ["None"],
-          pickup_location: "Road No. 36, Jubilee Hills, Hyderabad",
-          contact_info: "+91 98765 43210",
-          additional_notes: "Fresh paneer pulao and dal in sealed containers.",
-          latitude: 17.4325,
-          longitude: 78.4072,
-        }),
+      const newDonation = await apiClient.createDonation({
+        donor_id: "usr_donor_1",
+        donor_name: "FreshBite Restaurant",
+        food_name: "Vegetarian Meal Pack",
+        food_type: "Cooked Meal",
+        food_category: "Veg Meal",
+        quantity: 12,
+        packets: 12,
+        servings: 12,
+        prep_time: "Freshly prepared 30 mins ago",
+        expiry_time: new Date(Date.now() + 2 * 60 * 60 * 1000).toISOString(),
+        dietary_information: ["Vegetarian", "Jain-friendly"],
+        allergens: ["None"],
+        pickup_location: "Road No. 36, Jubilee Hills, Hyderabad",
+        contact_info: "+91 98765 43210",
+        additional_notes: "Fresh paneer pulao and dal in sealed containers.",
+        latitude: 17.4325,
+        longitude: 78.4072,
       });
 
-      const newDonation = await donationRes.json();
+      // 2. Synthesize AI match
+      const mockMatch: AiMatch = {
+        match_id: `match_${newDonation.donation_id}`,
+        donation_id: newDonation.donation_id,
+        ngo_id: "usr_ngo_1",
+        ngo_name: "Hope Community Center",
+        match_score: 95,
+        distance_km: 4.2,
+        estimated_travel_minutes: 15,
+        reasons: [
+          "Dietary requirement (Vegetarian) matches perfectly",
+          "Immediate transit corridor within 4.2 km",
+        ],
+        compatibility_status: "Suitable",
+        delivery_feasibility: "High",
+        quantity_comparison: "12/15 packets accepted",
+        status: "PENDING",
+      };
 
-      // 2. Fetch matches
-      const matchesRes = await fetch(`/api/donations/${newDonation.donation_id}/matches`);
-      const matchesData = await matchesRes.json();
-      const topMatch = matchesData.matches?.[0];
+      // 3. NGO Accepts
+      const acceptResult = await apiClient.acceptMatch(mockMatch, newDonation);
 
-      if (topMatch) {
-        // 3. NGO Accepts
-        const acceptRes = await fetch(`/api/matches/${topMatch.match_id}/accept`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            ngo_id: "user_ngo_1",
-            ngo_name: "Hope Community Center",
-            destination: "Road No. 10, Banjara Hills, Hyderabad",
-            contact_phone: "+91 91234 56789",
-            delivery_person_id: "user_del_1",
-            delivery_person_name: "Rajesh Kumar",
-          }),
-        });
-        const acceptData = await acceptRes.json();
-
-        // 4. Progress Delivery
-        if (acceptData.delivery) {
-          await fetch(`/api/deliveries/${acceptData.delivery.delivery_id}/status`, {
-            method: "PUT",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ status: "DELIVERED_SUCCESSFULLY" }),
-          });
-
-          setCelebrationDelivery({
-            ...acceptData.delivery,
-            status: "DELIVERED_SUCCESSFULLY",
-          });
-        }
+      // 4. Progress Delivery
+      if (acceptResult?.delivery) {
+        const completedDelivery = await apiClient.updateDeliveryStatus(
+          acceptResult.delivery.delivery_id,
+          "DELIVERED_SUCCESSFULLY"
+        );
+        setCelebrationDelivery(completedDelivery);
       }
 
       await fetchData();
@@ -404,7 +337,7 @@ export function App() {
 
   const handleMarkAllNotificationsRead = async () => {
     try {
-      await fetch("/api/notifications/read-all", { method: "PUT" });
+      await apiClient.markAllNotificationsRead();
       setNotifications((prev) =>
         prev.map((n) => ({ ...n, read_status: true, read: true }))
       );
@@ -483,7 +416,10 @@ export function App() {
         currentUser={currentUser}
         onRoleChange={handleRoleChange}
         onOpenDemoGuide={() => setIsWalkthroughOpen(true)}
-        onResetDemo={fetchData}
+        onResetDemo={async () => {
+          await apiClient.resetDemo();
+          await fetchData();
+        }}
         notifications={currentUserNotifications}
         onNotificationClick={() => setCurrentView("notifications")}
         onMarkAllNotificationsRead={handleMarkAllNotificationsRead}
